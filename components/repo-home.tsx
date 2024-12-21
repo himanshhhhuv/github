@@ -6,49 +6,70 @@ import {
   GitBranch,
   GitFork,
   GitPullRequest,
+  LucideIcon,
   MessageCircle,
   Star,
 } from "lucide-react";
 import { Badge } from "./ui/badge";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import logger from "../lib/logger";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "./theme-toggle";
 import { getRepoInfo } from "../lib/methods";
 import { RepoInfo } from "../types/objects";
-export function RepoHome({
-  owner,
-  repo,
-  url,
-  children,
-}: {
+
+// Add interfaces at the top
+interface RepoHomeProps {
   owner: string;
   repo: string;
   url: string;
   children: React.ReactNode;
-}) {
+}
+
+interface RepoStatsButtonProps {
+  icon: LucideIcon;
+  label: string;
+  count: number;
+}
+
+// Memoize tabs array
+const REPO_TABS = [
+  { name: "Code", icon: Code, href: "/repo" },
+  { name: "Branches", icon: GitBranch, href: "/branches" },
+  { name: "Pull Requests", icon: GitPullRequest, href: "/pull-requests" },
+  { name: "Issues", icon: Bug, href: "/issues" },
+  { name: "Discussions", icon: MessageCircle, href: "/discussions" },
+] as const;
+
+// Extract repository stats button
+const RepoStatsButton = memo(({ icon: Icon, label, count }: RepoStatsButtonProps) => (
+  <button className="inline-flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 hover:bg-muted/80 transition-colors">
+    <Icon className="h-4 w-4" />
+    <span className="hidden sm:inline">{label}</span>
+    <Badge variant="secondary" className="ml-1">{count}</Badge>
+  </button>
+));
+RepoStatsButton.displayName = 'RepoStatsButton';
+
+export function RepoHome({ owner, repo, url, children }: RepoHomeProps) {
   const router = useRouter();
-  const [repoInfo, setRepoInfo] = useState<RepoInfo | null>({
-    stars: 0,
-    watchers: 0,
-    forks: 0,
-    isPrivate: false,
-    name: "",
-    description: "",
-    defaultBranch: "",
-    branches: [],
-    readme: "",
-    topics: [],
-    license: "",
-    updatedAt: "",
-  });
+  const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const fetchRepoInfo = async () => {
     try {
+      setIsLoading(true);
+      setError(null);
       const data = await getRepoInfo(url);
       setRepoInfo(data);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch repository info';
+      setError(errorMessage);
       logger.error("Error fetching repository info", { error: err });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -59,13 +80,25 @@ export function RepoHome({
     fetchRepoInfo();
   }, [url]);
 
-  const tabs = [
-    { name: "Code", icon: Code, href: "/repo" },
-    { name: "Branches", icon: GitBranch, href: "/branches" },
-    { name: "Pull Requests", icon: GitPullRequest, href: "/pull-requests" },
-    { name: "Issues", icon: Bug, href: "/issues" },
-    { name: "Discussions", icon: MessageCircle, href: "/discussions" },
-  ];
+  // Show loading state
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <p className="text-destructive">Error: {error}</p>
+        <button 
+          onClick={() => fetchRepoInfo()}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-background min-h-screen">
@@ -96,21 +129,9 @@ export function RepoHome({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-4">
-            <button className="inline-flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 hover:bg-muted/80 transition-colors">
-              <Star className="h-4 w-4" />
-              <span className="hidden sm:inline">Star</span>
-              <Badge variant="secondary" className="ml-1">{repoInfo?.stars || 0}</Badge>
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 hover:bg-muted/80 transition-colors">
-              <Eye className="h-4 w-4" />
-              <span className="hidden sm:inline">Watch</span>
-              <Badge variant="secondary" className="ml-1">{repoInfo?.watchers || 0}</Badge>
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 hover:bg-muted/80 transition-colors">
-              <GitFork className="h-4 w-4" />
-              <span className="hidden sm:inline">Fork</span>
-              <Badge variant="secondary" className="ml-1">{repoInfo?.forks || 0}</Badge>
-            </button>
+            <RepoStatsButton icon={Star} label="Star" count={repoInfo?.stars || 0} />
+            <RepoStatsButton icon={Eye} label="Watch" count={repoInfo?.watchers || 0} />
+            <RepoStatsButton icon={GitFork} label="Fork" count={repoInfo?.forks || 0} />
           </div>
         </div>
       </div>
@@ -118,7 +139,7 @@ export function RepoHome({
       <div className="border-b border-muted overflow-x-auto">
         <div className="container mx-auto">
           <nav className="flex min-w-max">
-            {tabs.map((tab) => {
+            {REPO_TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = tab.href === currentPath;
               return (
